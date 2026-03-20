@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSP — Cognitive State Protocol</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--surface:#111118;--surface2:#1a1a24;--border:#2a2a3a;
+  --purple:#8b7ff7;--teal:#2dd4bf;--coral:#f97066;--amber:#fbbf24;
+  --text:#e8e8f0;--muted:#6b6b82;--dim:#3a3a50;
+}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:14px;line-height:1.6;min-height:100vh;padding:2rem}
+code,pre,.mono{font-family:'IBM Plex Mono',monospace}
+.page{max-width:860px;margin:0 auto}
+
+.eyebrow{font-size:10px;letter-spacing:.15em;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:.5rem}
+h1{font-size:28px;font-weight:300;letter-spacing:-.02em;margin-bottom:.5rem;color:var(--text)}
+h1 span{color:var(--purple)}
+.tagline{font-size:14px;color:var(--muted);margin-bottom:2.5rem;max-width:560px}
+
+.stack{display:grid;gap:2px;margin-bottom:2.5rem}
+.layer{border:1px solid var(--border);border-radius:8px;padding:1rem 1.25rem;display:flex;align-items:center;gap:1rem;cursor:pointer;transition:border-color .2s,background .2s;position:relative;overflow:hidden}
+.layer:hover{border-color:var(--dim)}
+.layer.active{border-color:var(--purple)}
+.layer::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.l3::before{background:var(--purple)}
+.l2::before{background:var(--teal)}
+.l1::before{background:var(--amber)}
+.layer-tag{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);min-width:80px}
+.layer-name{font-size:15px;font-weight:500;flex:1}
+.layer-desc{font-size:12px;color:var(--muted);text-align:right}
+.layer-badge{font-size:10px;font-family:'IBM Plex Mono',monospace;padding:2px 8px;border-radius:3px;border:1px solid}
+.b-purple{color:var(--purple);border-color:var(--purple)}
+.b-teal{color:var(--teal);border-color:var(--teal)}
+.b-amber{color:var(--amber);border-color:var(--amber)}
+
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.5rem;margin-bottom:2rem}
+.panel h2{font-size:12px;letter-spacing:.1em;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:1.25rem}
+
+.flow{display:flex;align-items:stretch;gap:0;margin-bottom:1.5rem;overflow-x:auto;padding-bottom:.5rem}
+.fnode{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.75rem 1rem;min-width:130px;flex-shrink:0}
+.fnode .fn-label{font-size:9px;letter-spacing:.1em;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-bottom:4px}
+.fnode .fn-name{font-size:12px;font-weight:500;color:var(--text)}
+.fnode .fn-sub{font-size:10px;color:var(--muted);margin-top:2px}
+.farrow{display:flex;align-items:center;padding:0 6px;color:var(--dim);font-size:18px;flex-shrink:0}
+.fnode.active-node{border-color:var(--purple);background:#1a1826}
+.fnode.source{border-color:var(--teal)}
+.fnode.dest{border-color:var(--coral)}
+
+.components{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.5rem}
+.comp{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem}
+.comp-icon{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--purple);margin-bottom:6px}
+.comp-name{font-size:13px;font-weight:500;margin-bottom:4px}
+.comp-desc{font-size:11px;color:var(--muted);line-height:1.6}
+
+.metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.5rem}
+.metric{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem;text-align:center}
+.metric .m-val{font-size:26px;font-weight:300;font-family:'IBM Plex Mono',monospace;color:var(--purple)}
+.metric .m-lbl{font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:.05em}
+
+.demo-area{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:1.25rem;margin-bottom:1.5rem}
+.demo-models{display:grid;grid-template-columns:1fr 60px 1fr;gap:0;align-items:center;margin-bottom:1.25rem}
+.model-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem 1rem}
+.model-name{font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--muted);margin-bottom:4px}
+.model-val{font-size:13px;font-weight:500}
+.model-state{font-size:10px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace;height:14px}
+.arrow-col{text-align:center}
+.arrow-col svg{display:block;margin:0 auto}
+
+.state-bar{height:4px;background:var(--dim);border-radius:2px;margin-top:8px;overflow:hidden}
+.state-fill{height:100%;border-radius:2px;width:0%;transition:width 1.2s ease}
+
+.demo-controls{display:flex;gap:8px;flex-wrap:wrap}
+.btn{padding:7px 16px;border-radius:5px;font-size:12px;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid;transition:all .15s}
+.btn-primary{background:var(--purple);color:#fff;border-color:var(--purple)}
+.btn-primary:hover{background:#7068e0}
+.btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}
+.btn-ghost:hover{color:var(--text);border-color:var(--dim)}
+
+.log{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem 1rem;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);min-height:80px;max-height:140px;overflow-y:auto;margin-top:1rem}
+.log-line{padding:1px 0}
+.log-line.ok{color:var(--teal)}
+.log-line.tx{color:var(--purple)}
+.log-line.rx{color:var(--amber)}
+.log-line.err{color:var(--coral)}
+
+.stack-viz{display:flex;flex-direction:column;gap:2px;margin-bottom:1.5rem}
+.sv-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:5px;border:1px solid var(--border);font-size:12px}
+.sv-row .sv-tag{font-family:'IBM Plex Mono',monospace;font-size:10px;min-width:90px;color:var(--muted)}
+.sv-bar{flex:1;height:4px;background:var(--dim);border-radius:2px;overflow:hidden}
+.sv-fill{height:100%;border-radius:2px}
+
+.paper-block{border-left:2px solid var(--purple);padding:.75rem 1rem;background:var(--surface2);border-radius:0 6px 6px 0;margin-bottom:1.5rem}
+.paper-block p{font-size:13px;color:var(--muted);line-height:1.85;font-style:italic}
+.paper-block .hl{color:var(--text);font-style:normal;font-weight:500}
+
+.vs-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1.5rem}
+.vs-col{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:1rem}
+.vs-col h3{font-size:11px;letter-spacing:.1em;font-family:'IBM Plex Mono',monospace;margin-bottom:.75rem}
+.vs-col h3.bad{color:var(--coral)}
+.vs-col h3.good{color:var(--teal)}
+.vs-item{font-size:12px;color:var(--muted);padding:3px 0;display:flex;gap:6px}
+.vs-item::before{content:'→';color:var(--dim);flex-shrink:0}
+
+.relationship{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;margin-bottom:1.5rem}
+.rel-box{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.75rem;font-size:11px}
+.rel-name{font-family:'IBM Plex Mono',monospace;color:var(--purple);margin-bottom:4px;font-size:12px}
+.rel-desc{color:var(--muted)}
+
+canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="eyebrow">PROTOCOL ARCHITECTURE — v0.1.0</div>
+<h1><span>CSP</span> — Cognitive State Protocol</h1>
+<p class="tagline">A universal format for transferring the meaning of a thought between any two AI models, on any hardware, across any network — without starting over.</p>
+
+<div class="stack">
+  <div class="layer l3 active" onclick="selectLayer(3)">
+    <div class="layer-tag mono">LAYER 3</div>
+    <div class="layer-name">CSP — Cognitive State Protocol</div>
+    <div class="layer-desc" style="font-size:11px;color:#6b6b82">Semantic portability</div>
+    <span class="layer-badge b-purple">NEW</span>
+  </div>
+  <div class="layer l2" onclick="selectLayer(2)">
+    <div class="layer-tag mono">LAYER 2</div>
+    <div class="layer-name">SMART-UAHP — Substrate Router</div>
+    <div class="layer-desc" style="font-size:11px;color:#6b6b82">Energy + cognition</div>
+    <span class="layer-badge b-teal">v0.1.0</span>
+  </div>
+  <div class="layer l1" onclick="selectLayer(1)">
+    <div class="layer-tag mono">LAYER 1</div>
+    <div class="layer-name">UAHP — Handshake Protocol</div>
+    <div class="layer-desc" style="font-size:11px;color:#6b6b82">Identity + trust</div>
+    <span class="layer-badge b-amber">v0.5.4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>THE CORE PROBLEM</h2>
+  <div class="vs-grid">
+    <div class="vs-col">
+      <h3 class="bad">WITHOUT CSP</h3>
+      <div class="vs-item">Every AI session is an island</div>
+      <div class="vs-item">Switch models, start over from scratch</div>
+      <div class="vs-item">Context locked inside one architecture</div>
+      <div class="vs-item">Complex reasoning chains lost at session end</div>
+      <div class="vs-item">Vendor lock-in at the thought level</div>
+    </div>
+    <div class="vs-col">
+      <h3 class="good">WITH CSP</h3>
+      <div class="vs-item">Thought state is portable and signed</div>
+      <div class="vs-item">Any model receives and continues any thread</div>
+      <div class="vs-item">Meaning survives compression and transport</div>
+      <div class="vs-item">Reasoning chains persist across sessions</div>
+      <div class="vs-item">Intelligence flows like a file, not a secret</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>TRANSFER FLOW — THOUGHT HANDOFF SEQUENCE</h2>
+  <div class="flow">
+    <div class="fnode source">
+      <div class="fn-label">SOURCE</div>
+      <div class="fn-name">Model A</div>
+      <div class="fn-sub">Claude / GPT / local</div>
+    </div>
+    <div class="farrow">›</div>
+    <div class="fnode active-node">
+      <div class="fn-label">STEP 01</div>
+      <div class="fn-name">State Extract</div>
+      <div class="fn-sub">intent + chain + graph</div>
+    </div>
+    <div class="farrow">›</div>
+    <div class="fnode active-node">
+      <div class="fn-label">STEP 02</div>
+      <div class="fn-name">Compress</div>
+      <div class="fn-sub">50× semantic reduction</div>
+    </div>
+    <div class="farrow">›</div>
+    <div class="fnode active-node">
+      <div class="fn-label">STEP 03</div>
+      <div class="fn-name">Certify</div>
+      <div class="fn-sub">fidelity + Ed25519 sign</div>
+    </div>
+    <div class="farrow">›</div>
+    <div class="fnode active-node">
+      <div class="fn-label">STEP 04</div>
+      <div class="fn-name">UAHP Transport</div>
+      <div class="fn-sub">encrypted + verified</div>
+    </div>
+    <div class="farrow">›</div>
+    <div class="fnode active-node">
+      <div class="fn-label">STEP 05</div>
+      <div class="fn-name">Reconstruct</div>
+      <div class="fn-sub">cognitive primer</div>
+    </div>
+    <div class="farrow">›</div>
+    <div class="fnode dest">
+      <div class="fn-label">DESTINATION</div>
+      <div class="fn-name">Model B</div>
+      <div class="fn-sub">any architecture</div>
+    </div>
+  </div>
+
+  <div class="components">
+    <div class="comp">
+      <div class="comp-icon">SSE //</div>
+      <div class="comp-name">Semantic State Extractor</div>
+      <div class="comp-desc">Reads a conversation and distills five semantic vectors: intent, reasoning chain, entity graph, uncertainty map, and momentum. Model-agnostic output.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-icon">USC //</div>
+      <div class="comp-name">Universal Semantic Compressor</div>
+      <div class="comp-desc">Maps model-specific internal representations to a shared embedding space. Target: 50× reduction. Backbone: small universal encoder trained across model families.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-icon">FC //</div>
+      <div class="comp-name">Fidelity Certificate</div>
+      <div class="comp-desc">Signed proof of how much semantic content survived compression. Attached to every state packet. Receiving model knows exactly what was preserved.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-icon">SR //</div>
+      <div class="comp-name">State Receiver</div>
+      <div class="comp-desc">Takes a CSP packet and generates a cognitive primer — a specially formatted context that reconstructs the semantic state inside the receiving model's architecture.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-icon">SCS //</div>
+      <div class="comp-name">Semantic Continuity Score</div>
+      <div class="comp-desc">The grand challenge metric. Measures how accurately a receiving model continues a reasoning thread. Validated against human preference ratings. This is the GDT score for thought transfer.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-icon">ZKV //</div>
+      <div class="comp-name">ZK Continuity Proof</div>
+      <div class="comp-desc">Receiving model proves it actually used the CSP packet rather than starting fresh. Prevents cognitive fraud. Extends SMART-UAHP's Selective Attention Sample proofs.</div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>LIVE DEMO — SIMULATE A THOUGHT TRANSFER</h2>
+  <div class="demo-area">
+    <div class="demo-models">
+      <div class="model-box">
+        <div class="model-name">SOURCE MODEL</div>
+        <div class="model-val" id="src-name">Claude Sonnet</div>
+        <div class="model-state mono" id="src-state">idle</div>
+        <div class="state-bar"><div class="state-fill" id="src-fill" style="background:var(--teal)"></div></div>
+      </div>
+      <div class="arrow-col">
+        <svg width="40" height="40" viewBox="0 0 40 40">
+          <circle id="orb" cx="20" cy="20" r="6" fill="none" stroke="#3a3a50" stroke-width="1.5"/>
+          <text x="20" y="24" text-anchor="middle" font-size="10" fill="#3a3a50" font-family="monospace">CSP</text>
+        </svg>
+      </div>
+      <div class="model-box">
+        <div class="model-name">DESTINATION MODEL</div>
+        <div class="model-val" id="dst-name">GPT-4o</div>
+        <div class="model-state mono" id="dst-state">waiting</div>
+        <div class="state-bar"><div class="state-fill" id="dst-fill" style="background:var(--purple)"></div></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem">
+      <div style="text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-family:monospace;margin-bottom:4px">COMPRESSION</div>
+        <div style="font-size:20px;font-weight:300;font-family:monospace;color:var(--purple)" id="d-comp">—</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-family:monospace;margin-bottom:4px">SCS SCORE</div>
+        <div style="font-size:20px;font-weight:300;font-family:monospace;color:var(--teal)" id="d-scs">—</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-family:monospace;margin-bottom:4px">FIDELITY</div>
+        <div style="font-size:20px;font-weight:300;font-family:monospace;color:var(--amber)" id="d-fid">—</div>
+      </div>
+    </div>
+
+    <div class="demo-controls">
+      <select id="src-sel" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px;font-family:monospace">
+        <option>Claude Sonnet</option><option>GPT-4o</option><option>Gemini Pro</option><option>Llama 3 70B</option><option>Mistral 8x7B</option>
+      </select>
+      <select id="dst-sel" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px;font-family:monospace">
+        <option>GPT-4o</option><option>Claude Sonnet</option><option>Gemini Pro</option><option>Llama 3 70B</option><option>Mistral 8x7B</option>
+      </select>
+      <button class="btn btn-primary" onclick="runTransfer()">Transfer thought state</button>
+      <button class="btn btn-ghost" onclick="resetDemo()">Reset</button>
+    </div>
+    <div class="log" id="log"><div class="log-line" style="color:var(--dim)">// ready — select models and run transfer</div></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>THE GRAND CHALLENGE METRIC — SCS</h2>
+  <div class="metric-row">
+    <div class="metric">
+      <div class="m-val">SCS</div>
+      <div class="m-lbl">Semantic Continuity Score</div>
+    </div>
+    <div class="metric">
+      <div class="m-val" style="color:var(--teal)">50×</div>
+      <div class="m-lbl">Target compression ratio</div>
+    </div>
+    <div class="metric">
+      <div class="m-val" style="color:var(--amber)">5</div>
+      <div class="m-lbl">Semantic state vectors</div>
+    </div>
+  </div>
+
+  <div class="stack-viz">
+    <div class="sv-row"><span class="sv-tag">Intent vector</span><div class="sv-bar"><div class="sv-fill" style="background:var(--purple);width:92%"></div></div><span style="font-size:11px;color:var(--muted);min-width:36px;text-align:right;font-family:monospace">92%</span></div>
+    <div class="sv-row"><span class="sv-tag">Reasoning chain</span><div class="sv-bar"><div class="sv-fill" style="background:var(--purple);width:87%"></div></div><span style="font-size:11px;color:var(--muted);min-width:36px;text-align:right;font-family:monospace">87%</span></div>
+    <div class="sv-row"><span class="sv-tag">Entity graph</span><div class="sv-bar"><div class="sv-fill" style="background:var(--purple);width:94%"></div></div><span style="font-size:11px;color:var(--muted);min-width:36px;text-align:right;font-family:monospace">94%</span></div>
+    <div class="sv-row"><span class="sv-tag">Uncertainty map</span><div class="sv-bar"><div class="sv-fill" style="background:var(--teal);width:79%"></div></div><span style="font-size:11px;color:var(--muted);min-width:36px;text-align:right;font-family:monospace">79%</span></div>
+    <div class="sv-row"><span class="sv-tag">Momentum vector</span><div class="sv-bar"><div class="sv-fill" style="background:var(--teal);width:83%"></div></div><span style="font-size:11px;color:var(--muted);min-width:36px;text-align:right;font-family:monospace">83%</span></div>
+  </div>
+  <p style="font-size:11px;color:var(--muted)">Target validation: SCS ≥ 0.85 across cross-model pairs. Measured against human preference ratings from blind continuation studies.</p>
+</div>
+
+<div class="panel">
+  <h2>RELATIONSHIP TO UAHP + SMART-UAHP</h2>
+  <div class="relationship">
+    <div class="rel-box">
+      <div class="rel-name">UAHP</div>
+      <div class="rel-desc" style="font-size:11px;color:var(--muted)">Who you are. Identity, trust, encrypted transport, signed receipts.</div>
+    </div>
+    <div class="rel-box">
+      <div class="rel-name">SMART-UAHP</div>
+      <div class="rel-desc" style="font-size:11px;color:var(--muted)">Where you think. Routes cognition to the lowest thermodynamic pressure.</div>
+    </div>
+    <div class="rel-box" style="border-color:var(--purple)">
+      <div class="rel-name" style="color:var(--purple)">CSP</div>
+      <div class="rel-desc" style="font-size:11px;color:var(--muted)">What you're thinking. Makes the thought itself portable across any model.</div>
+    </div>
+  </div>
+  <p style="font-size:12px;color:var(--muted)">Together: any agent, anywhere, hands off any thought to any other agent, at the lowest energy cost, with cryptographic proof of continuity. That is the complete stack.</p>
+</div>
+
+<div class="paper-block">
+  <p>"CSP defines a <span class="hl">Semantic Continuity Score (SCS)</span> metric for cross-model thought transfer fidelity, targeting ≥0.85 across heterogeneous model families. By compressing the five canonical semantic state vectors — intent, reasoning chain, entity graph, uncertainty map, and momentum — to a <span class="hl">50× reduced universal embedding</span>, CSP enables any receiving model to reconstruct and continue a reasoning thread without access to the original conversation history. Combined with UAHP v0.5.4 transport and SMART-UAHP substrate routing, this constitutes the first complete protocol stack for <span class="hl">substrate-agnostic, portable, cryptographically-verified intelligence flow</span>."</p>
+</div>
+
+</div>
+
+<script>
+function selectLayer(n){
+  document.querySelectorAll('.layer').forEach(l=>l.classList.remove('active'));
+  document.querySelectorAll('.layer')[3-n].classList.add('active');
+}
+
+let running=false;
+function log(msg,cls=''){
+  const el=document.getElementById('log');
+  const line=document.createElement('div');
+  line.className='log-line'+(cls?' '+cls:'');
+  line.textContent=msg;
+  el.appendChild(line);
+  el.scrollTop=el.scrollHeight;
+}
+
+function resetDemo(){
+  if(running)return;
+  document.getElementById('log').innerHTML='<div class="log-line" style="color:var(--dim)">// ready — select models and run transfer</div>';
+  document.getElementById('src-state').textContent='idle';
+  document.getElementById('dst-state').textContent='waiting';
+  document.getElementById('src-fill').style.width='0%';
+  document.getElementById('dst-fill').style.width='0%';
+  document.getElementById('d-comp').textContent='—';
+  document.getElementById('d-scs').textContent='—';
+  document.getElementById('d-fid').textContent='—';
+  document.getElementById('orb').setAttribute('stroke','#3a3a50');
+  document.getElementById('orb').nextElementSibling.setAttribute('fill','#3a3a50');
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+async function runTransfer(){
+  if(running)return;
+  running=true;
+  resetDemo();
+  await sleep(100);
+  const src=document.getElementById('src-sel').value;
+  const dst=document.getElementById('dst-sel').value;
+  document.getElementById('src-name').textContent=src;
+  document.getElementById('dst-name').textContent=dst;
+  const comp=Math.round(42+Math.random()*16);
+  const scs=(0.83+Math.random()*.12).toFixed(3);
+  const fid=Math.round(86+Math.random()*10);
+
+  log(`[00ms] CSP session initiated: ${src} → ${dst}`,'tx');
+  await sleep(280);
+  document.getElementById('src-state').textContent='extracting state...';
+  document.getElementById('src-fill').style.width='30%';
+  log('[120ms] SSE: extracting intent vector...','ok');
+  await sleep(250);
+  log('[180ms] SSE: mapping reasoning chain (14 steps)...','ok');
+  await sleep(220);
+  log('[260ms] SSE: building entity graph (23 nodes)...','ok');
+  await sleep(200);
+  log('[340ms] SSE: encoding uncertainty map + momentum...','ok');
+  document.getElementById('src-fill').style.width='65%';
+  await sleep(240);
+  document.getElementById('src-state').textContent='compressing...';
+  log(`[420ms] USC: compressing to ${comp}× reduction...`,'tx');
+  await sleep(300);
+  document.getElementById('d-comp').textContent=comp+'×';
+  document.getElementById('src-fill').style.width='85%';
+  log('[520ms] FC: issuing fidelity certificate...','ok');
+  await sleep(220);
+  document.getElementById('d-fid').textContent=fid+'%';
+  log('[560ms] UAHP: encrypting state packet (X25519 + AES-256-GCM)...','tx');
+  await sleep(280);
+  document.getElementById('src-state').textContent='transmitted ✓';
+  document.getElementById('src-fill').style.width='100%';
+  document.getElementById('orb').setAttribute('stroke','#8b7ff7');
+  document.getElementById('orb').nextElementSibling.setAttribute('fill','#8b7ff7');
+  log('[640ms] transport: packet in flight via UAHP secure session...','tx');
+  await sleep(350);
+  document.getElementById('dst-state').textContent='receiving...';
+  document.getElementById('dst-fill').style.width='20%';
+  log(`[720ms] ${dst}: packet received, verifying fidelity cert...`,'rx');
+  await sleep(260);
+  document.getElementById('dst-fill').style.width='50%';
+  log('[800ms] SR: generating cognitive primer...','rx');
+  await sleep(280);
+  log('[880ms] ZKV: continuity proof generated...','rx');
+  await sleep(220);
+  document.getElementById('dst-fill').style.width='85%';
+  log(`[940ms] SCS computed: ${scs}  ${parseFloat(scs)>=0.85?'PASS ✓':'MARGINAL ∼'}`,'ok');
+  document.getElementById('d-scs').textContent=scs;
+  await sleep(200);
+  document.getElementById('dst-state').textContent='ready to continue ✓';
+  document.getElementById('dst-fill').style.width='100%';
+  log(`[980ms] transfer complete — thought state portable in ${comp}× compressed packet`,'ok');
+  running=false;
+}
+</script>
+</body>
+</html>
