@@ -20,7 +20,7 @@ CSP compresses a conversation into five semantic state vectors:
 | Uncertainty map | What the model knows it does not know |
 | Momentum | The direction and velocity of the current reasoning |
 
-These five vectors are compressed to a 50× smaller universal embedding, signed with a Fidelity Certificate, transported via UAHP v0.5.4 encrypted sessions, and reconstructed into a cognitive primer that any receiving model can use to continue the thread.
+These five vectors are compressed to a 50× smaller universal embedding, signed with a Fidelity Certificate, transported via UAHP v0.5.4 encrypted sessions, and reconstructed into a cognitive primer that any receiving model can use to continue the thread. Note: direct UAHP transport integration is planned for v0.3; current implementation validates the semantic compression layer independently via Groq.
 
 ## The grand challenge metric
 
@@ -46,7 +46,7 @@ Together: any agent, anywhere, hands off any thought to any other agent, at the 
 
 ## Status
 
-Version 0.1.0 — architecture and simulation complete. Semantic encoder training in progress.
+Version 0.2.0 — architecture and simulation complete. Semantic encoder training in progress.
 
 ## Dependencies
 
