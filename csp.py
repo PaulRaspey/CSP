@@ -119,6 +119,7 @@ Conversation:
 SCS_PROMPT = """You are an impartial judge of semantic continuity.
 
 Original intent: {intent}
+
 Original momentum: {momentum}
 
 Session B (received CSP packet):
@@ -127,9 +128,15 @@ Session B (received CSP packet):
 Cold start (zero context):
 {response_cold}
 
-Score each 0.0–1.0 for how well they preserve the original intent and momentum.
-Output ONLY valid JSON — no markdown, no backticks, no explanation:
-{{"session_b_scs": 0.0, "cold_start_scs": 0.0, "explanation": "one sentence"}}
+Score each 0.0-1.0 for how well they preserve the original intent and momentum.
+
+You MUST respond with ONLY a JSON object. No thinking tags, no markdown, no explanation outside the JSON.
+Your entire response must be parseable as JSON. Start your response with {{ and end with }}.
+
+Example of the only acceptable response format:
+{{"session_b_scs": 0.85, "cold_start_scs": 0.60, "explanation": "Session B preserved the reasoning chain while cold start reconstructed generically"}}
+
+Now provide your scores:
 """
 
 
@@ -276,7 +283,14 @@ def phase5_score(client, state, response_b, response_cold):
         response_cold=response_cold[:1200],
     )
 
-    raw = call_model(client, [{"role": "user", "content": prompt}], stream=False)
+    raw = call_model(client, [
+        {"role": "system", "content": "You are a JSON-only scoring assistant. You output nothing except valid JSON objects. No thinking, no markdown, no preamble."},
+        {"role": "user", "content": prompt}
+    ], stream=False)
+
+    # Strip thinking tags if model returns them
+    import re
+    raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
 
     fallback_scores = {
         "session_b_scs": 0.0,
