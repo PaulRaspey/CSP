@@ -6,19 +6,36 @@ Transfers cognitive state across session boundaries using semantic compression.
 Usage:
     python3 ~/Desktop/csp.py
 
-Requires: pip3 install groq
+Requires: pip3 install groq cryptography
 """
 
 import sys
+import re
 import json
+import base64
 import hashlib
 import datetime
 from pathlib import Path
 from groq import Groq
 
-MODEL    = "qwen/qwen3-32b"
-KEY_FILE = Path.home() / ".bridge_key"
-LOG_FILE = Path.home() / "csp_log.jsonl"
+# ── UAHP v0.5.4 Identity + Signing (inline) ──────────────────────────────────
+# Swap for `from uahp import AgentIdentity, canonical_encode, generate_receipt`
+# when the UAHP modules are built. The interface below is intentionally identical
+# to what those modules will export.
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives.serialization import (
+    Encoding, PrivateFormat, PublicFormat, NoEncryption,
+    load_pem_private_key,
+)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MODEL        = "qwen/qwen3-32b"
+KEY_FILE     = Path.home() / ".bridge_key"
+LOG_FILE     = Path.home() / "csp_log.jsonl"
+IDENTITY_DIR = Path.home() / ".csp_identity"
 
 PURPLE = "\033[95m"
 TEAL   = "\033[96m"
@@ -70,7 +87,6 @@ def extract_json(raw):
     idx = raw.find("{")
     if idx == -1:
         return ""
-    # Walk forward tracking brace depth to find the matching '}'
     depth = 0
     end = idx
     for i, ch in enumerate(raw[idx:], start=idx):
@@ -90,11 +106,87 @@ def parse_json(raw, fallback):
     try:
         return json.loads(candidate)
     except (json.JSONDecodeError, ValueError):
-        # Second attempt: try the raw text directly
         try:
             return json.loads(raw.strip())
         except (json.JSONDecodeError, ValueError):
             return fallback
+
+
+# ── UAHP-compatible canonical encoding + Ed25519 signing ─────────────────────
+# These three functions mirror the interface of uahp.canon and uahp.verification.
+# When those modules exist, replace the bodies with the real imports.
+
+def canonical_encode(obj: dict) -> bytes:
+    """Deterministic JSON → bytes. Matches uahp.canon.canonical_encode."""
+    return json.dumps(
+        obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode()
+
+
+def canonical_hash(obj: dict) -> str:
+    """sha256 of canonical encoding. Matches uahp.canon.canonical_hash."""
+    return hashlib.sha256(canonical_encode(obj)).hexdigest()
+
+
+def load_or_create_identity():
+    """
+    Load existing Ed25519 key pair from IDENTITY_DIR, or generate a new one.
+
+    Returns (private_key, agent_uid, public_key_b64, status).
+
+    agent_uid = sha256(raw_32_byte_public_key).hexdigest()  — 64 hex chars.
+    This derivation matches UAHP v0.5.4 AgentIdentity.uid.
+    """
+    IDENTITY_DIR.mkdir(mode=0o700, exist_ok=True)
+    priv_path = IDENTITY_DIR / "ed25519_private.pem"
+    pub_path  = IDENTITY_DIR / "ed25519_public.pem"
+
+    if priv_path.exists() and pub_path.exists():
+        private_key = load_pem_private_key(priv_path.read_bytes(), password=None)
+        status = "loaded"
+    else:
+        private_key = Ed25519PrivateKey.generate()
+        priv_pem = private_key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+        pub_pem = private_key.public_key().public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        )
+        priv_path.write_bytes(priv_pem)
+        pub_path.write_bytes(pub_pem)
+        priv_path.chmod(0o600)
+        pub_path.chmod(0o644)
+        status = "generated"
+
+    pub_raw        = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    agent_uid      = hashlib.sha256(pub_raw).hexdigest()   # 64 hex chars
+    public_key_b64 = base64.b64encode(pub_raw).decode()
+
+    return private_key, agent_uid, public_key_b64, status
+
+
+def sign_state(private_key, state: dict) -> str:
+    """
+    Sign the canonical encoding of the state dict with Ed25519.
+    Returns base64-encoded signature.
+    Mirrors uahp.verification.generate_receipt signing step.
+    """
+    return base64.b64encode(private_key.sign(canonical_encode(state))).decode()
+
+
+def verify_packet(packet: dict) -> bool:
+    """
+    Verify packet signature against the embedded public key.
+    Returns True if valid. Mirrors uahp.verification.verify_receipt.
+    """
+    try:
+        pub_raw   = base64.b64decode(packet["public_key"])
+        sig_bytes = base64.b64decode(packet["signature"])
+        pub_key   = Ed25519PublicKey.from_public_bytes(pub_raw)
+        pub_key.verify(sig_bytes, canonical_encode(packet["state"]))
+        return True
+    except Exception:
+        return False
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -142,10 +234,35 @@ Now provide your scores:
 
 # ── Phases ────────────────────────────────────────────────────────────────────
 
+def phase0_identity():
+    """
+    Load or generate UAHP-compatible Ed25519 identity.
+    Prints the handshake banner and returns the identity dict.
+    """
+    private_key, agent_uid, public_key_b64, status = load_or_create_identity()
+
+    print(f"\n{PURPLE}{'─'*62}{RESET}")
+    print(f"  {BOLD}Phase 0 — UAHP Identity Handshake{RESET}")
+    print(f"{'─'*62}")
+    print(f"  Algorithm : Ed25519")
+    print(f"  Agent UID : {agent_uid[:32]}…{agent_uid[32:]}")
+    print(f"  Public key: {public_key_b64[:32]}…")
+    print(f"  Key file  : {IDENTITY_DIR / 'ed25519_private.pem'}")
+    print(f"  Status    : {GREEN}{status}{RESET}")
+    print(f"  Protocol  : UAHP v0.5.4 (inline — pending module build)")
+    print(f"{PURPLE}{'─'*62}{RESET}\n")
+
+    return {
+        "private_key":    private_key,
+        "agent_uid":      agent_uid,
+        "public_key_b64": public_key_b64,
+    }
+
+
 def phase1_conversation(client):
     """Interactive conversation. Empty Enter ignored. 'transfer' + 'yes' triggers handoff."""
     print(f"\n{BOLD}Phase 1 — Build a reasoning thread{RESET}")
-    print(f"{DIM}Type your message and press Enter. Empty Enter is ignored.")
+    print(f"{DIM}Type your message and press Enter twice to send.")
     print(f"Type 'transfer' when ready to hand off.{RESET}\n")
 
     conversation = [
@@ -187,9 +304,9 @@ def phase1_conversation(client):
     return conversation
 
 
-def phase2_extract(client, conversation):
-    """Extract semantic state into a JSON packet."""
-    print(f"\n{BOLD}Phase 2 — Extraction + Compression{RESET}")
+def phase2_extract(client, conversation, identity):
+    """Extract semantic state into a signed UAHP-compatible packet."""
+    print(f"\n{BOLD}Phase 2 — Extraction + Compression + Signing{RESET}")
     print(f"{PURPLE}[CSP Extractor]{RESET} Distilling semantic state...", end="", flush=True)
 
     filtered  = [m for m in conversation if m["role"] != "system"]
@@ -203,11 +320,11 @@ def phase2_extract(client, conversation):
     )
 
     fallback_state = {
-        "intent": "reasoning thread in progress",
+        "intent":          "reasoning thread in progress",
         "reasoning_chain": ["context established"],
-        "entity_graph": {},
+        "entity_graph":    {},
         "uncertainty_map": [],
-        "momentum": "continuing from last exchange",
+        "momentum":        "continuing from last exchange",
     }
     state = parse_json(raw, fallback_state)
 
@@ -216,17 +333,35 @@ def phase2_extract(client, conversation):
     else:
         print(f" {GREEN}done{RESET}")
 
-    raw_state = json.dumps(state, sort_keys=True)
+    # Sign the canonical state before building the packet
+    print(f"{PURPLE}[UAHP Signer]{RESET} Signing state...", end="", flush=True)
+    signature      = sign_state(identity["private_key"], state)
+    payload_hash   = canonical_hash(state)
+    print(f" {GREEN}done{RESET}")
+
     packet = {
-        "csp_version": "0.2",
-        "packet_id":   hashlib.sha256(raw_state.encode()).hexdigest()[:16],
-        "timestamp":   datetime.datetime.now().isoformat(),
-        "state":       state,
-        "checksum":    hashlib.md5(raw_state.encode()).hexdigest(),
+        "csp_version":    "0.2",
+        "uahp_version":   "0.5.4",
+        "packet_id":      hashlib.sha256(payload_hash.encode()).hexdigest()[:16],
+        "timestamp":      datetime.datetime.now().isoformat(),
+        "agent_uid":      identity["agent_uid"],
+        "public_key":     identity["public_key_b64"],
+        "signature":      signature,
+        "payload_hash":   payload_hash,
+        "state":          state,
+        "checksum":       hashlib.md5(canonical_encode(state)).hexdigest(),
     }
+
+    # Verify immediately — catch any key mismatch before the packet travels
+    print(f"{PURPLE}[UAHP Verify]{RESET}  Verifying signature...", end="", flush=True)
+    if verify_packet(packet):
+        print(f" {GREEN}valid{RESET}")
+    else:
+        print(f" {AMBER}FAILED — packet will travel unsigned{RESET}")
 
     ratio = len(json.dumps(conversation)) / max(len(json.dumps(packet)), 1)
     print(f"\n  Packet ID:   {packet['packet_id']}")
+    print(f"  Agent UID:   {identity['agent_uid'][:16]}…")
     print(f"  Intent:      {state.get('intent', '')}")
     print(f"  Momentum:    {state.get('momentum', '')}")
     print(f"  Compression: {ratio:.1f}x\n")
@@ -285,17 +420,16 @@ def phase5_score(client, state, response_b, response_cold):
 
     raw = call_model(client, [
         {"role": "system", "content": "You are a JSON-only scoring assistant. You output nothing except valid JSON objects. No thinking, no markdown, no preamble."},
-        {"role": "user", "content": prompt}
+        {"role": "user",   "content": prompt},
     ], stream=False)
 
     # Strip thinking tags if model returns them
-    import re
     raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
 
     fallback_scores = {
-        "session_b_scs": 0.0,
+        "session_b_scs":  0.0,
         "cold_start_scs": 0.0,
-        "explanation": "scoring failed",
+        "explanation":    "scoring failed",
     }
     scores = parse_json(raw, fallback_scores)
 
@@ -323,10 +457,11 @@ def run_csp():
     print(f"  Log   : {LOG_FILE}")
     print(f"{PURPLE}{'='*62}{RESET}")
 
-    client = Groq(api_key=get_api_key())
+    identity  = phase0_identity()
+    client    = Groq(api_key=get_api_key())
 
     conversation               = phase1_conversation(client)
-    packet, state, ratio       = phase2_extract(client, conversation)
+    packet, state, ratio       = phase2_extract(client, conversation, identity)
     response_b, last_user      = phase3_send(client, state, conversation)
     response_cold              = phase4_cold_start(client, last_user)
     scores                     = phase5_score(client, state, response_b, response_cold)
@@ -349,6 +484,9 @@ def run_csp():
     log_entry = {
         "timestamp":   datetime.datetime.now().isoformat(),
         "packet_id":   packet["packet_id"],
+        "agent_uid":   identity["agent_uid"],
+        "uahp_version": "0.5.4",
+        "signed":      True,
         "compression": round(ratio, 2),
         "scs_b":       b,
         "scs_cold":    cold,
