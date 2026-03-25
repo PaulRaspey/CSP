@@ -147,11 +147,20 @@ def phase1_conversation(client):
 
     while True:
         try:
-            user_input = input(f"{AMBER}You:{RESET} ").strip()
+            print(f"{AMBER}You (press Enter twice to send):{RESET} ")
+            lines = []
+            while True:
+                line = input()
+                if line.strip().lower() == "transfer":
+                    user_input = "transfer"
+                    break
+                if line == "" and lines and lines[-1] == "":
+                    user_input = "\n".join(lines).strip()
+                    break
+                lines.append(line)
         except (KeyboardInterrupt, EOFError):
             sys.exit(0)
 
-        # Ignore empty Enter
         if not user_input:
             continue
 
